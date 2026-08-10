@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NetworkSolver — Thermo-Hydraulic Network Tool</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<header class="ns-toolbar">
+  <div class="ns-toolbar-title">NetworkSolver</div>
+  <div class="ns-toolbar-actions">
+    <button id="btn-new" type="button">New</button>
+    <select id="example-select" aria-label="Example network"></select>
+    <button id="btn-load-example" type="button">Load Example</button>
+    <button id="btn-load-file" type="button">Load File</button>
+    <button id="btn-save-file" type="button">Save File</button>
+    <button id="btn-undo" type="button" title="Undo (Ctrl+Z)">Undo</button>
+    <button id="btn-redo" type="button" title="Redo (Ctrl+Shift+Z)">Redo</button>
+    <button id="btn-solve" type="button" class="ns-btn-primary">Solve</button>
+  </div>
+</header>
+
+<div id="ns-banner" class="ns-banner" hidden></div>
+
+<main class="ns-layout" id="ns-layout">
+  <aside class="ns-palette" id="ns-palette"></aside>
+
+  <div class="ns-resizer" id="resizer-left" role="separator" aria-orientation="vertical" aria-label="Resize palette panel" tabindex="0"></div>
+
+  <section class="ns-canvas-wrap">
+    <svg id="ns-canvas" viewBox="0 0 1700 950" preserveAspectRatio="xMidYMid meet"></svg>
+  </section>
+
+  <div class="ns-resizer" id="resizer-right" role="separator" aria-orientation="vertical" aria-label="Resize side panel" tabindex="0"></div>
+
+  <aside class="ns-side-panel">
+    <nav class="ns-tabs" id="ns-tabs">
+      <button class="ns-tab ns-active" data-tab="properties" type="button">Properties</button>
+      <button class="ns-tab" data-tab="results" type="button">Results</button>
+      <button class="ns-tab" data-tab="goalseek" type="button">Goal Seek</button>
+    </nav>
+    <div class="ns-tab-panel" id="panel-properties"></div>
+    <div class="ns-tab-panel" id="panel-results" hidden></div>
+    <div class="ns-tab-panel" id="panel-goalseek" hidden></div>
+  </aside>
+</main>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

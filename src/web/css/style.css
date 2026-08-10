@@ -1,0 +1,264 @@
+:root {
+  --bg: #f4f6f9;
+  --panel-bg: #ffffff;
+  --border: #d7dce3;
+  --text: #1c2530;
+  --text-muted: #6b7684;
+  --accent: #2f6fed;
+  --accent-dark: #1d4fbf;
+  --error: #d3362b;
+  --warning: #b8790a;
+  --ok: #1a8a5f;
+  --pipe: #5b8def;
+  --valve: #e08a2c;
+  --pump: #2ca97f;
+  --hx: #c2477a;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--panel-bg);
+  border-radius: 6px;
+  padding: 6px 12px;
+  color: var(--text);
+}
+button:hover { border-color: var(--accent); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.ns-btn-primary, .ns-btn {
+  background: var(--accent);
+  border-color: var(--accent-dark);
+  color: white;
+}
+.ns-btn-primary:hover, .ns-btn:hover { background: var(--accent-dark); }
+.ns-btn-secondary { background: var(--panel-bg); color: var(--text); }
+
+/* ---- toolbar ---- */
+.ns-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.ns-toolbar-title { font-weight: 700; font-size: 1.1rem; }
+.ns-toolbar-actions { display: flex; gap: 8px; }
+
+.ns-banner {
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  flex: 0 0 auto;
+}
+.ns-banner-error { background: #fbe4e2; color: var(--error); }
+.ns-banner-warning { background: #fdf1dc; color: var(--warning); }
+.ns-banner-ok { background: #e2f5ec; color: var(--ok); }
+
+/* ---- layout ---- */
+.ns-layout {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: var(--ns-palette-width, 220px) 6px 1fr 6px var(--ns-side-width, 340px);
+  min-height: 0;
+}
+
+.ns-resizer {
+  position: relative;
+  cursor: col-resize;
+  background: var(--border);
+  touch-action: none;
+}
+.ns-resizer::before {
+  /* widen the hit area beyond the visible 6px track without affecting layout */
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+}
+.ns-resizer:hover, .ns-resizer.ns-resizing { background: var(--accent); }
+
+.ns-palette {
+  border-right: 1px solid var(--border);
+  background: var(--panel-bg);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+}
+.ns-palette-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-start;
+  width: 100%;
+  text-align: left;
+}
+.ns-palette-icon { width: 1.4em; text-align: center; }
+.ns-palette-btn.ns-active { background: var(--accent); color: white; border-color: var(--accent-dark); }
+.ns-palette-danger { color: var(--error); margin-top: 8px; }
+.ns-hint { color: var(--text-muted); font-size: 0.82rem; margin-top: 8px; }
+
+.ns-canvas-wrap {
+  position: relative;
+  background: repeating-linear-gradient(0deg, #eef1f5 0, #eef1f5 1px, var(--bg) 1px, var(--bg) 24px),
+              repeating-linear-gradient(90deg, #eef1f5 0, #eef1f5 1px, var(--bg) 1px, var(--bg) 24px);
+  overflow: hidden;
+}
+#ns-canvas { width: 100%; height: 100%; touch-action: none; }
+
+.ns-zoom-controls {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 6px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+.ns-zoom-controls button { padding: 4px 10px; line-height: 1; font-size: 1rem; }
+.ns-zoom-percent { font-size: 0.8rem; color: var(--text-muted); min-width: 3.4em; text-align: center; user-select: none; }
+
+.ns-side-panel {
+  border-left: 1px solid var(--border);
+  background: var(--panel-bg);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.ns-tabs { display: flex; border-bottom: 1px solid var(--border); flex: 0 0 auto; }
+.ns-tab {
+  flex: 1;
+  border: none;
+  border-radius: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  padding: 10px;
+}
+.ns-tab.ns-active { border-bottom-color: var(--accent); font-weight: 600; }
+.ns-tab-panel { flex: 1 1 auto; overflow-y: auto; padding: 14px; }
+
+/* ---- forms ---- */
+.ns-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.85rem;
+  margin-bottom: 8px;
+}
+.ns-field span { color: var(--text-muted); }
+.ns-field input, .ns-field select, select, input[type="text"], input[type="number"] {
+  font: inherit;
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: white;
+  color: var(--text);
+}
+h3 { font-size: 0.95rem; margin: 16px 0 8px; border-top: 1px solid var(--border); padding-top: 10px; }
+h3:first-child { border-top: none; padding-top: 0; margin-top: 0; }
+h4 { font-size: 0.85rem; margin: 10px 0 6px; }
+.ns-panel-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ns-panel-header h3 { margin-bottom: 0; }
+
+.ns-readonly-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  padding: 3px 0;
+  border-bottom: 1px dashed #eee;
+}
+.ns-value { font-variant-numeric: tabular-nums; color: var(--accent-dark); }
+
+.ns-messages { margin-top: 6px; }
+.ns-message { font-size: 0.8rem; color: var(--warning); }
+
+.ns-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+.ns-row select { flex: 1; }
+.ns-row input { width: 90px; }
+.ns-btn-small { padding: 3px 8px; font-size: 0.8rem; }
+
+/* ---- status / diagnostics ---- */
+.ns-status { padding: 8px; border-radius: 6px; font-size: 0.85rem; margin-bottom: 8px; }
+.ns-status-ok { background: #e2f5ec; color: var(--ok); }
+.ns-status-warning { background: #fdf1dc; color: var(--warning); }
+.ns-status-notConverged { background: #fdf1dc; color: var(--warning); }
+.ns-status-error { background: #fbe4e2; color: var(--error); }
+
+.ns-diagnostics-list { list-style: none; padding: 0; margin: 0 0 10px; font-size: 0.8rem; }
+.ns-error-item { color: var(--error); }
+.ns-warning-item { color: var(--warning); }
+
+.ns-table-scroll { overflow-x: auto; margin-bottom: 12px; }
+.ns-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+.ns-table th, .ns-table td {
+  border: 1px solid var(--border);
+  padding: 4px 6px;
+  text-align: right;
+  white-space: nowrap;
+}
+.ns-table th:first-child, .ns-table td:first-child { text-align: left; }
+
+/* ---- SVG network ---- */
+/* .ns-node-shape marks the node's main visual shape regardless of tag --
+   a circle for a junction, a rect for a reservoir/tank -- so these rules
+   don't need to know which tag each node type happens to use. */
+.ns-node-shape { fill: #ffffff; stroke: #5b6472; stroke-width: 2.5; }
+.ns-node text { font-size: 12px; fill: var(--text); pointer-events: none; }
+.ns-node-sub { fill: var(--text-muted); font-size: 10px; }
+.ns-node.ns-node-boundary-pressure .ns-node-shape { fill: #dfe9ff; stroke: var(--accent-dark); }
+.ns-node .ns-boundary-ring { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 3 3; }
+.ns-node.ns-node-boundary-temperature .ns-node-shape { stroke-dasharray: 0; filter: drop-shadow(0 0 0 var(--hx)); }
+.ns-node.ns-selected .ns-node-shape { stroke: #111827; stroke-width: 3.5; }
+.ns-node.ns-has-error .ns-node-shape { stroke: var(--error); }
+.ns-node.ns-has-warning .ns-node-shape { stroke: var(--warning); }
+.ns-node.ns-pending-source .ns-node-shape { stroke: var(--ok); stroke-width: 4; }
+.ns-reservoir-hatch { stroke: #5b6472; stroke-width: 1.5; }
+.ns-pending-hint { stroke: var(--ok); stroke-width: 2; stroke-dasharray: 4 3; }
+.ns-node { cursor: grab; }
+
+.ns-element polyline { cursor: pointer; }
+.ns-element.ns-unsolved polyline { opacity: 0.55; stroke-dasharray: 6 4; }
+.ns-element.ns-disabled polyline { opacity: 0.3; }
+.ns-element.ns-selected polyline { stroke-width: 7; filter: drop-shadow(0 0 0 #111827); }
+.ns-element.ns-has-error .ns-marker circle, .ns-element.ns-has-error .ns-marker rect { stroke: var(--error) !important; }
+.ns-element.ns-has-warning .ns-marker circle, .ns-element.ns-has-warning .ns-marker rect { stroke: var(--warning) !important; }
+.ns-element-label { font-size: 10px; fill: var(--text-muted); pointer-events: none; }
+.ns-flow-arrow { pointer-events: none; }
+.ns-marker { pointer-events: none; }
+
+.ns-reconnect-handle { cursor: move; }
+.ns-reconnect-handle rect { fill-opacity: 0.95; }
+.ns-reconnect-handle:hover rect { stroke-width: 3.5; }
+.ns-reconnect-preview {
+  stroke: #111827;
+  stroke-width: 2.5;
+  stroke-dasharray: 5 4;
+  pointer-events: none;
+}

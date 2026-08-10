@@ -1,0 +1,22 @@
+{
+  "name": "networksolver",
+  "version": "1.0.0",
+  "description": "Browser-based interactive thermo-hydraulic network calculation tool",
+  "type": "module",
+  "private": true,
+  "main": "src/solver/index.js",
+  "scripts": {
+    "start": "node src/server/server.js",
+    "dev": "node src/server/server.js",
+    "test": "node --test",
+    "lint": "eslint .",
+    "build": "node scripts/build.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.5"
+  },
+  "license": "MIT"
+}
