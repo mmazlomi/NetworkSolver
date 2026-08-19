@@ -20,11 +20,16 @@ export function validateNetwork(network) {
   const warnings = [];
 
   const nodeIds = new Set();
+  const nodeNames = new Set();
   for (const node of network.nodes) {
     if (nodeIds.has(node.id)) {
       errors.push(error('DUPLICATE_NODE_ID', `Duplicate node id "${node.id}"`, node.id));
     }
     nodeIds.add(node.id);
+    if (nodeNames.has(node.name)) {
+      errors.push(error('DUPLICATE_NODE_NAME', `Duplicate node name "${node.name}" -- node names must be unique`, node.id));
+    }
+    nodeNames.add(node.name);
     if (node.boundary.pressure.fixed && node.boundary.flow.fixed) {
       errors.push(error(
         'OVER_CONSTRAINED_NODE',
@@ -55,11 +60,16 @@ export function validateNetwork(network) {
   }
 
   const elementIds = new Set();
+  const elementNames = new Set();
   for (const el of network.elements) {
     if (elementIds.has(el.id)) {
       errors.push(error('DUPLICATE_ELEMENT_ID', `Duplicate element id "${el.id}"`, el.id));
     }
     elementIds.add(el.id);
+    if (elementNames.has(el.name)) {
+      errors.push(error('DUPLICATE_ELEMENT_NAME', `Duplicate element name "${el.name}" -- element names must be unique, since the UI, CSV export, and goal-seek panels identify elements by name`, el.id));
+    }
+    elementNames.add(el.name);
 
     if (!nodeIds.has(el.sourceNodeId)) {
       errors.push(error('MISSING_SOURCE_NODE', `Element "${el.name}" source node "${el.sourceNodeId}" does not exist`, el.id));
@@ -100,6 +110,24 @@ export function validateNetwork(network) {
     const paramErrors = mod.validateParams(el.params);
     for (const msg of paramErrors) {
       errors.push(error('INVALID_PARAMS', `Element "${el.name}": ${msg}`, el.id));
+    }
+  }
+
+  // recomputeFriction re-derives a Darcy-Weisbach pipe's admittance from its
+  // geometry + solved Reynolds number every solve -- if that same pipe is
+  // also a goal-seek adjustable element, goal-seek's candidate admittance
+  // values are silently overridden and never actually reach the solve, so
+  // goal-seek can never converge on it.
+  if (network.recomputeFriction && network.headlossModel === 'darcyWeisbach') {
+    for (const adj of network.goalSeek.adjustable) {
+      const el = network.elements.find((e) => e.id === adj.elementId);
+      if (el && el.type === 'pipe') {
+        warnings.push(warning(
+          'RECOMPUTE_FRICTION_OVERRIDES_GOAL_SEEK',
+          `Pipe "${el.name}" is a goal-seek adjustable element, but "Recompute friction factor" is enabled -- its admittance is re-derived from geometry/Reynolds number at solve time, so goal-seek cannot tune it`,
+          el.id,
+        ));
+      }
     }
   }
 

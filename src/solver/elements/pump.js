@@ -64,6 +64,16 @@ export function computeNominalAdmittance() {
   return null; // pumps are driven by their head curve, not an admittance
 }
 
+/** Pumps aren't admittance-driven at all -- no FNCG-equivalent Y. */
+export function computeFncgAdmittance() {
+  return null;
+}
+
+/** No FNCG-equivalent Y (see computeFncgAdmittance above) -- so no FNCG-equivalent mass flow either. */
+export function computeFncgMassFlow() {
+  return null;
+}
+
 export function validateParams(params) {
   const errors = [];
   if (params.mode === 'fixedHead' && !(params.fixedHead >= 0)) {

@@ -8,10 +8,10 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 const NODE_RADIUS = 14;
 
 const ELEMENT_COLORS = {
-  pipe: '#5b8def',
-  valve: '#e08a2c',
-  pump: '#2ca97f',
-  heatExchanger: '#c2477a',
+  pipe: 'var(--pipe)',
+  valve: 'var(--valve)',
+  pump: 'var(--pump)',
+  heatExchanger: 'var(--hx)',
 };
 
 function svgEl(tag, attrs = {}) {
@@ -389,12 +389,12 @@ function midpointMarker(type, x, y, color) {
   const g = svgEl('g', { transform: `translate(${x},${y})`, class: 'ns-marker' });
   if (type === 'valve') {
     g.appendChild(svgEl('path', { d: 'M -9,-7 L 9,7 M -9,7 L 9,-7', stroke: color, 'stroke-width': 3, fill: 'none' }));
-    g.appendChild(svgEl('circle', { r: 11, fill: 'white', stroke: color, 'stroke-width': 2, opacity: 0.001 }));
+    g.appendChild(svgEl('circle', { r: 11, fill: 'var(--node-fill)', stroke: color, 'stroke-width': 2, opacity: 0.001 }));
   } else if (type === 'pump') {
-    g.appendChild(svgEl('circle', { r: 10, fill: 'white', stroke: color, 'stroke-width': 2.5 }));
+    g.appendChild(svgEl('circle', { r: 10, fill: 'var(--node-fill)', stroke: color, 'stroke-width': 2.5 }));
     g.appendChild(svgEl('path', { d: 'M -4,-5 L 6,0 L -4,5 Z', fill: color }));
   } else if (type === 'heatExchanger') {
-    g.appendChild(svgEl('rect', { x: -11, y: -8, width: 22, height: 16, rx: 3, fill: 'white', stroke: color, 'stroke-width': 2.5 }));
+    g.appendChild(svgEl('rect', { x: -11, y: -8, width: 22, height: 16, rx: 3, fill: 'var(--node-fill)', stroke: color, 'stroke-width': 2.5 }));
     g.appendChild(svgEl('path', { d: 'M -6,0 q 3,-6 6,0 t 6,0', stroke: color, 'stroke-width': 1.6, fill: 'none' }));
   }
   return g;
@@ -418,7 +418,7 @@ function reconnectHandle(node, elementId, end, color) {
     class: 'ns-reconnect-handle', 'data-element-id': elementId, 'data-reconnect-end': end,
   });
   g.appendChild(svgEl('rect', {
-    x: -8, y: -8, width: 16, height: 16, rx: 2, fill: 'white', stroke: color, 'stroke-width': 2.5,
+    x: -8, y: -8, width: 16, height: 16, rx: 2, fill: 'var(--node-fill)', stroke: color, 'stroke-width': 2.5,
     'data-element-id': elementId, 'data-reconnect-end': end,
   }));
   return g;

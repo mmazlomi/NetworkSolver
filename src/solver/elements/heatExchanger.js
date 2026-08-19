@@ -47,6 +47,16 @@ export function computeNominalAdmittance() {
   return null; // heat exchanger admittance is set directly, not derived
 }
 
+/** `params.area` here is heat-transfer area, not a flow bore -- no FNCG-equivalent Y. */
+export function computeFncgAdmittance() {
+  return null;
+}
+
+/** No FNCG-equivalent Y (see computeFncgAdmittance above) -- so no FNCG-equivalent mass flow either. */
+export function computeFncgMassFlow() {
+  return null;
+}
+
 export function validateParams(params) {
   const errors = [];
   if (params.effectivenessMode === 'ua' && !(params.ua >= 0)) errors.push('ua must be >= 0');

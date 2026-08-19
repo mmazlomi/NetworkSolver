@@ -9,19 +9,16 @@ export const type = 'pipe';
 const HAZEN_WILLIAMS_EXPONENT = 1 / 1.852;
 
 /**
- * Darcy-Weisbach + minor-loss resistance, condensed into an admittance
- * coefficient A such that Q = A * sign(dP) * sqrt(|dP|). The friction
- * factor is evaluated once at a representative velocity (Swamee-Jain
- * approximation) rather than re-derived every Newton iteration -- see
- * docs/research.md 2.3 for why admittance is treated as a fixed network
- * parameter, matching how valve Kv ratings are used.
+ * Combined dimensionless loss coefficient K = f*(L/D) + K_minor -- friction
+ * (Swamee-Jain explicit approximation, evaluated at `velocity`) plus the
+ * minor-loss coefficient, the same two terms Darcy-Weisbach admittance and
+ * the FNCG-equivalent Y both derive from. Kept as one function so the
+ * friction-factor evaluation only lives in one place.
  */
-function computeDarcyWeisbachAdmittance(params, fluid) {
+function totalLossCoefficient(params, fluid, velocity) {
   const { length, diameter, roughness, localLossCoefficient = 0 } = params;
   if (!(length > 0) || !(diameter > 0)) return null;
-  const area = Math.PI * diameter * diameter / 4;
-  const refVelocity = 1; // m/s, representative reference velocity
-  const re = (fluid.density * refVelocity * diameter) / fluid.viscosity;
+  const re = (fluid.density * velocity * diameter) / fluid.viscosity;
   let f;
   if (re < 2300) {
     f = 64 / Math.max(re, 1);
@@ -29,9 +26,40 @@ function computeDarcyWeisbachAdmittance(params, fluid) {
     const term = roughness / (3.7 * diameter) + 5.74 / re ** 0.9;
     f = 0.25 / Math.log10(term) ** 2;
   }
-  const resistance = (f * (length / diameter) + localLossCoefficient) * fluid.density / (2 * area * area);
+  return f * (length / diameter) + localLossCoefficient;
+}
+
+/**
+ * Darcy-Weisbach + minor-loss resistance, condensed into an admittance
+ * coefficient A such that Q = A * sign(dP) * sqrt(|dP|), using the
+ * Swamee-Jain explicit friction-factor approximation evaluated at
+ * `velocity` (default: a fixed 1 m/s reference velocity). By default this
+ * is called once, at that fixed reference velocity, and the resulting
+ * admittance is then treated as a fixed network parameter for the whole
+ * solve -- matching how valve Kv ratings are used (docs/research.md 2.3).
+ * When `network.recomputeFriction` is enabled, the hydraulic solver instead
+ * calls this every outer iteration with the previous iteration's actual
+ * flow-derived velocity, so the friction factor tracks the network's own
+ * Reynolds number instead of a fixed stand-in.
+ */
+function computeDarcyWeisbachAdmittance(params, fluid, velocity = 1) {
+  const diameter = params.diameter;
+  if (!(diameter > 0)) return null;
+  const K = totalLossCoefficient(params, fluid, velocity);
+  if (!(K > 0)) return null;
+  const area = Math.PI * diameter * diameter / 4;
+  const resistance = K * fluid.density / (2 * area * area);
   if (!(resistance > 0)) return null;
   return 1 / Math.sqrt(resistance);
+}
+
+/** Reynolds number for a pipe carrying volumetric flow Q (m^3/s). */
+function reynoldsNumberFor(params, fluid, Q) {
+  const diameter = params.diameter;
+  if (!(diameter > 0)) return null;
+  const area = Math.PI * diameter * diameter / 4;
+  const velocity = Math.abs(Q) / area;
+  return (fluid.density * velocity * diameter) / fluid.viscosity;
 }
 
 /**
@@ -60,11 +88,77 @@ function computeHazenWilliamsAdmittance(params, fluid) {
  * @param {object} params
  * @param {object} fluid
  * @param {'darcyWeisbach'|'hazenWilliams'} [headlossModel] network-wide choice (model.js HEADLOSS_MODELS)
+ * @param {number} [velocity] m/s used for the Reynolds number in the
+ *   Darcy-Weisbach branch. Defaults to the fixed 1 m/s reference velocity
+ *   (static/nominal admittance); the hydraulic solver passes the actual
+ *   flow-derived velocity instead when network.recomputeFriction is on
+ *   (see solver/hydraulics.js).
  */
-export function computeNominalAdmittance(params, fluid, headlossModel = 'darcyWeisbach') {
+export function computeNominalAdmittance(params, fluid, headlossModel = 'darcyWeisbach', velocity = 1) {
   return headlossModel === 'hazenWilliams'
     ? computeHazenWilliamsAdmittance(params, fluid)
-    : computeDarcyWeisbachAdmittance(params, fluid);
+    : computeDarcyWeisbachAdmittance(params, fluid, velocity);
+}
+
+export { reynoldsNumberFor };
+
+/**
+ * FNCG-equivalent line admittance Y (the dimensionless loss coefficient
+ * FNCG's ysfcm4 subroutine calls `afpnt`), back-solved so that FNCG's own
+ * mass-flow equation -- mdot = sf * sign(dP) * sqrt(2*Y*rho*|dP|), sf =
+ * flow area, emp55 = 1, no pump coupling -- reproduces exactly the flow
+ * NetworkSolver already solved for at this element. NetworkSolver is
+ * treated as ground truth: Y is derived from its actual solved operating
+ * point (flow, deltaPressure), not re-derived from pipe geometry, so it
+ * doesn't matter whether admittance.current is the nominal Darcy-Weisbach
+ * value, a goal-seek-tuned override, or an untouched schema default --
+ * whatever produced this flow, Y captures it:
+ *   mdot = rho*flow  =>  Y = rho * flow^2 / (2 * sf^2 * |dP|)
+ *
+ * Under Darcy-Weisbach this is an exact, dP-independent unit conversion of
+ * admittance.current, not just a point match: NetworkSolver's own
+ * Q = A*sign(dP)*sqrt(|dP|) has the same sqrt(dP) exponent as FNCG's
+ * equation, so a whole-network FNCG solve using these Y values (same
+ * topology, same boundary pressures) should reproduce NetworkSolver's
+ * whole-network flow distribution, not just this one element's flow in
+ * isolation.
+ *
+ * Under Hazen-Williams, NetworkSolver's Q ∝ dP^(1/1.852) has a different
+ * exponent than FNCG's fixed sqrt(dP) form -- there is no Y that makes the
+ * two equations agree for any dP other than the current one, so this only
+ * matches exactly at today's operating point; if FNCG's own solve shifts
+ * this pipe's dP even slightly, its flow will drift from NetworkSolver's.
+ * That's an inherent limitation of representing an HW pipe in FNCG's
+ * orifice-type formulation, not a bug in this conversion.
+ *
+ * Null (left blank in the export) when the operating point can't pin down
+ * a unique Y: no flow bore (diameter), or zero pressure drop (disabled
+ * element, or any other zero-dP degenerate case).
+ */
+export function computeFncgAdmittance(params, fluid, flow, deltaPressure) {
+  const diameter = params.diameter;
+  if (!(diameter > 0) || !Number.isFinite(flow) || !(Math.abs(deltaPressure) > 0)) return null;
+  const area = Math.PI * diameter * diameter / 4;
+  return fluid.density * flow * flow / (2 * area * area * Math.abs(deltaPressure));
+}
+
+/**
+ * FNCG-equivalent mass flow through this line: mdot = sf * sign(dP) *
+ * sqrt(2*Y*rho*|dP|), FNCG's own mass-flow form, evaluated in reverse (Y
+ * and dP known, solve for mdot). Because Y is itself back-solved from
+ * NetworkSolver's actual flow at this same dP (see computeFncgAdmittance),
+ * this reproduces density * flow exactly -- it's a round-trip check that
+ * the "FNCG admittance Y" export really does encode this element's
+ * NetworkSolver-solved flow, not an independent estimate.
+ * @param {number} admittanceY the Y from computeFncgAdmittance.
+ * @param {number} deltaPressure Pa, signed (this element's solved pressure drop).
+ */
+export function computeFncgMassFlow(params, fluid, admittanceY, deltaPressure) {
+  const diameter = params.diameter;
+  if (!(diameter > 0) || !Number.isFinite(admittanceY) || admittanceY < 0 || !Number.isFinite(deltaPressure)) return null;
+  const area = Math.PI * diameter * diameter / 4;
+  const sign = deltaPressure < 0 ? -1 : 1;
+  return sign * area * Math.sqrt(2 * admittanceY * fluid.density * Math.abs(deltaPressure));
 }
 
 export function flow({ pIn, pOut, zIn, zOut, admittance, fluid, enabled, headlossModel = 'darcyWeisbach' }) {

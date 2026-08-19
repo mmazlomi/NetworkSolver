@@ -15,6 +15,15 @@ export const NODE_TYPES = Object.freeze(['junction', 'reservoir', 'tank']);
 // older file means Darcy-Weisbach, unchanged).
 export const HEADLOSS_MODELS = Object.freeze(['darcyWeisbach', 'hazenWilliams']);
 
+// When true, pipe admittance under Darcy-Weisbach is re-derived every outer
+// Newton iteration from the previous iteration's converged flow (i.e. the
+// friction factor is evaluated at the network's own Reynolds number, not a
+// fixed 1 m/s reference velocity). Off by default: it preserves all
+// pre-existing behavior/save files, matches how admittance is otherwise
+// treated as a fixed Kv-style parameter (docs/research.md §2.3), and costs
+// extra solver iterations users may not want for a quick what-if. Only
+// affects Darcy-Weisbach; Hazen-Williams has no friction-factor/Re concept.
+
 let idCounter = 0;
 function nextId(prefix) {
   idCounter += 1;
@@ -178,6 +187,7 @@ export function createElement(type, overrides = {}) {
       inletTemperature: null,
       outletTemperature: null,
       heatDuty: null,
+      reynoldsNumber: null, // only populated for pipes when network.recomputeFriction is enabled
       valid: null,
       messages: [],
       ...overrides.computed,
@@ -196,6 +206,7 @@ export function createNetwork(overrides = {}) {
     },
     fluid: createFluid(overrides.fluid),
     headlossModel: overrides.headlossModel || 'darcyWeisbach',
+    recomputeFriction: overrides.recomputeFriction ?? false,
     nodes: overrides.nodes || [],
     elements: overrides.elements || [],
     goalSeek: overrides.goalSeek || {

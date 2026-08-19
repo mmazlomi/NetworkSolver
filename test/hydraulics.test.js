@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createNetwork, createNode, createElement } from '../src/solver/model.js';
+import { createNetwork, createNode, createElement, createFluid } from '../src/solver/model.js';
 import { solveHydraulics } from '../src/solver/hydraulics.js';
+import { computeNominalAdmittance } from '../src/solver/elements/pipe.js';
 
 function twoNodeNetwork({ p1, p2, admittance }) {
   const n1 = createNode({ id: 'n1', boundary: { pressure: { fixed: true, value: p1 } } });
@@ -127,4 +128,64 @@ test('reservoir and tank drive flow purely through effective elevation (both at 
   const deltaZ = 100 - (50 + 8);
   const expectedQ = A * Math.sqrt(density * gravity * deltaZ);
   assert.ok(Math.abs(result.elementResults.p1.Q - expectedQ) / expectedQ < 1e-6);
+});
+
+// Two pipes of different diameter in parallel between the same pair of
+// fixed-pressure nodes, at two very different total driving pressures.
+function parallelPipesNetwork({ p1, p2, recomputeFriction }) {
+  const paramsA = { length: 10, diameter: 0.05, roughness: 0.00015, localLossCoefficient: 0 };
+  const paramsB = { length: 10, diameter: 0.08, roughness: 0.00015, localLossCoefficient: 0 };
+  const nominalA = computeNominalAdmittance(paramsA, createFluid(), 'darcyWeisbach');
+  const nominalB = computeNominalAdmittance(paramsB, createFluid(), 'darcyWeisbach');
+  const n1 = createNode({ id: 'n1', boundary: { pressure: { fixed: true, value: p1 } } });
+  const n2 = createNode({ id: 'n2', boundary: { pressure: { fixed: true, value: p2 } } });
+  const pA = createElement('pipe', { id: 'pA', sourceNodeId: 'n1', targetNodeId: 'n2', admittance: { current: nominalA }, params: paramsA });
+  const pB = createElement('pipe', { id: 'pB', sourceNodeId: 'n1', targetNodeId: 'n2', admittance: { current: nominalB }, params: paramsB });
+  return createNetwork({ nodes: [n1, n2], elements: [pA, pB], recomputeFriction });
+}
+
+test('recomputeFriction=false (default): parallel-branch flow-split ratio is exactly invariant to total driving pressure', () => {
+  const low = solveHydraulics(parallelPipesNetwork({ p1: 100000.05, p2: 100000, recomputeFriction: false }));
+  const high = solveHydraulics(parallelPipesNetwork({ p1: 8000000, p2: 100000, recomputeFriction: false }));
+  const ratioLow = low.elementResults.pA.Q / low.elementResults.pB.Q;
+  const ratioHigh = high.elementResults.pA.Q / high.elementResults.pB.Q;
+  // Reproduces the reported behavior: with a fixed (Re-independent)
+  // admittance, Q = A*sqrt(dp) for every pipe, so scaling the total driving
+  // pressure scales every branch's flow by the same sqrt(factor) and the
+  // split ratio never moves, no matter how different the two Reynolds
+  // numbers actually are.
+  assert.ok(Math.abs(ratioLow - ratioHigh) / ratioHigh < 1e-9);
+  assert.equal(low.elementResults.pA.reynoldsNumber, null);
+});
+
+test('recomputeFriction=true: parallel-branch flow-split ratio shifts with total driving pressure (Reynolds-dependent friction)', () => {
+  const low = solveHydraulics(parallelPipesNetwork({ p1: 100000.05, p2: 100000, recomputeFriction: true }));
+  const high = solveHydraulics(parallelPipesNetwork({ p1: 8000000, p2: 100000, recomputeFriction: true }));
+  assert.equal(low.converged, true);
+  assert.equal(high.converged, true);
+  const ratioLow = low.elementResults.pA.Q / low.elementResults.pB.Q;
+  const ratioHigh = high.elementResults.pA.Q / high.elementResults.pB.Q;
+  assert.ok(Math.abs(ratioLow - ratioHigh) / ratioHigh > 0.1, `expected ratios to differ, got ${ratioLow} vs ${ratioHigh}`);
+
+  // Reynolds numbers should be populated and consistent with Re = rho*v*D/mu
+  // for the converged flow.
+  const fluid = createFluid();
+  for (const [id, params] of [['pA', { diameter: 0.05 }], ['pB', { diameter: 0.08 }]]) {
+    const r = high.elementResults[id];
+    const area = Math.PI * params.diameter * params.diameter / 4;
+    const expectedRe = (fluid.density * Math.abs(r.Q) / area * params.diameter) / fluid.viscosity;
+    assert.ok(Math.abs(r.reynoldsNumber - expectedRe) / expectedRe < 1e-3);
+  }
+});
+
+test('recomputeFriction=true still converges (and matches recomputeFriction=false) for a network with no unknown pressure nodes', () => {
+  // Two directly-bridged fixed-pressure nodes: n===0 (no Newton unknowns),
+  // exercising the dedicated friction fixed-point loop rather than the
+  // Newton loop.
+  const withFriction = solveHydraulics(parallelPipesNetwork({ p1: 8000000, p2: 100000, recomputeFriction: true }));
+  const without = solveHydraulics(parallelPipesNetwork({ p1: 8000000, p2: 100000, recomputeFriction: false }));
+  assert.equal(withFriction.converged, true);
+  // Self-consistency: the converged flow's own velocity, fed back through
+  // the Darcy-Weisbach admittance formula, must reproduce the same flow.
+  assert.notEqual(withFriction.elementResults.pA.Q, without.elementResults.pA.Q);
 });

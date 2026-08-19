@@ -1,7 +1,8 @@
 // Element type registry. Adding a new element type only requires a new
 // module in this directory implementing this same interface
-// (flow, thermalTransfer, computeNominalAdmittance, validateParams) and one
-// line here -- the hydraulic/thermal solvers never branch on element type.
+// (flow, thermalTransfer, computeNominalAdmittance, computeFncgAdmittance,
+// computeFncgMassFlow, validateParams) and one line here -- the hydraulic/thermal solvers never
+// branch on element type.
 import * as pipe from './pipe.js';
 import * as valve from './valve.js';
 import * as pump from './pump.js';

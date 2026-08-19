@@ -5,6 +5,7 @@
 import { getElementModule } from './elements/index.js';
 import { getEffectiveElevation } from './model.js';
 import { solveLinearSystem, normInf } from './linalg.js';
+import { reynoldsNumberFor } from './elements/pipe.js';
 
 const DEFAULT_OPTIONS = {
   maxIterations: 100,
@@ -14,7 +15,7 @@ const DEFAULT_OPTIONS = {
   initialGuess: 1e5, // Pa, used when no fixed-pressure node exists nearby
 };
 
-function evaluateElements(network, nodeById, pressureOf) {
+function evaluateElements(network, nodeById, pressureOf, admittanceById) {
   const results = new Map();
   for (const el of network.elements) {
     const source = nodeById.get(el.sourceNodeId);
@@ -27,7 +28,7 @@ function evaluateElements(network, nodeById, pressureOf) {
       pOut,
       zIn: getEffectiveElevation(source),
       zOut: getEffectiveElevation(target),
-      admittance: el.admittance.current,
+      admittance: (admittanceById && admittanceById.get(el.id)) ?? el.admittance.current,
       fluid: network.fluid,
       enabled: el.enabled,
       params: el.params,
@@ -36,6 +37,50 @@ function evaluateElements(network, nodeById, pressureOf) {
     results.set(el.id, out);
   }
   return results;
+}
+
+// Relative admittance change (between successive friction-factor refreshes)
+// below which the Reynolds-number/friction fixed point is considered
+// settled -- see refreshFrictionAdmittance().
+const FRICTION_TOLERANCE = 1e-6;
+
+/**
+ * One Picard step for network.recomputeFriction: re-derives each pipe's
+ * Darcy-Weisbach admittance from the velocity implied by its Q in
+ * `elementResults` (i.e. the previous outer iteration's flow), replacing
+ * the fixed 1 m/s reference velocity with the network's own Reynolds
+ * number. Non-Darcy-Weisbach pipes, and elements with invalid geometry,
+ * are left on their existing (static) admittance.
+ * @returns {{ admittanceById: Map, maxRelChange: number }} maxRelChange is
+ *   the largest relative admittance change across all pipes this step --
+ *   used as the friction-fixed-point convergence signal.
+ */
+function refreshFrictionAdmittance(network, admittanceById, elementResults) {
+  const next = new Map(admittanceById);
+  let maxRelChange = 0;
+  if (network.headlossModel !== 'darcyWeisbach') return { admittanceById: next, maxRelChange };
+  const pipeModule = getElementModule('pipe');
+  for (const el of network.elements) {
+    // Deliberately pipe-only: a valve's admittance is a Kv/opening-derived
+    // (and often goal-seek-tuned, user-overridden) value with no Reynolds
+    // number/friction-factor concept, so auto-refreshing it here would
+    // silently discard that -- see inspector.js's "Current" admittance
+    // field, which is intentionally decoupled from geometry unless the
+    // user edits geometry fields directly.
+    if (el.type !== 'pipe') continue;
+    const diameter = el.params.diameter;
+    if (!(diameter > 0)) continue;
+    const prev = admittanceById.get(el.id) ?? el.admittance.current;
+    if (!(prev > 0)) continue;
+    const { Q } = elementResults.get(el.id);
+    const area = Math.PI * diameter * diameter / 4;
+    const velocity = Math.abs(Q) / area;
+    const recomputed = pipeModule.computeNominalAdmittance(el.params, network.fluid, 'darcyWeisbach', velocity);
+    if (!(recomputed > 0)) continue;
+    next.set(el.id, recomputed);
+    maxRelChange = Math.max(maxRelChange, Math.abs(recomputed - prev) / prev);
+  }
+  return { admittanceById: next, maxRelChange };
 }
 
 /**
@@ -80,9 +125,9 @@ export function solveHydraulics(network, userOptions = {}) {
     return map;
   }
 
-  function residualVector(xVec) {
+  function residualVector(xVec, admittanceById) {
     const pressureOf = pressureAccessor(xVec);
-    const elementResults = evaluateElements(network, nodeById, pressureOf);
+    const elementResults = evaluateElements(network, nodeById, pressureOf, admittanceById);
     const residual = new Array(n).fill(0);
     for (let i = 0; i < n; i++) {
       residual[i] = -(unknownNodes[i].boundary.flow.value || 0);
@@ -101,22 +146,44 @@ export function solveHydraulics(network, userOptions = {}) {
   let status = 'maxIterationsReached';
   let converged = false;
   let iterations = 0;
-  let last = residualVector(x);
-
-  if (n === 0) {
-    converged = true;
-    status = 'converged';
-  }
+  const recomputeFriction = !!network.recomputeFriction;
+  // Only meaningful when recomputeFriction is on: elementId -> admittance,
+  // re-derived from the previous outer iteration's flow (see
+  // refreshFrictionAdmittance). Held fixed for the duration of one outer
+  // iteration (Jacobian assembly + line search) so that iteration's
+  // linearization stays self-consistent, then refreshed at the top of the
+  // next iteration -- a Picard step wrapped around the Newton solve.
+  let admittanceById = new Map();
+  let last = residualVector(x, admittanceById);
+  // Whether the most recent friction refresh left admittance materially
+  // unchanged. Mass-balance residual alone can't signal friction
+  // convergence: Newton will drive it to ~0 for *any* fixed admittance
+  // snapshot, so "converged" must also require that re-deriving admittance
+  // from the resulting flow doesn't move it any further.
+  let frictionSettled = !recomputeFriction;
 
   for (let iter = 0; iter < options.maxIterations && !converged; iter++) {
     iterations = iter + 1;
+    if (recomputeFriction) {
+      const refresh = refreshFrictionAdmittance(network, admittanceById, last.elementResults);
+      admittanceById = refresh.admittanceById;
+      last = residualVector(x, admittanceById);
+      frictionSettled = refresh.maxRelChange < FRICTION_TOLERANCE;
+    }
     const { residual: r0 } = last;
     const rNorm0 = normInf(r0);
 
-    if (rNorm0 < options.flowTolerance) {
+    if (rNorm0 < options.flowTolerance && frictionSettled) {
       converged = true;
       status = 'converged';
       break;
+    }
+
+    if (n === 0) {
+      // No unknown pressures to solve for -- nothing more this iteration
+      // can do besides the friction refresh above; loop again so the next
+      // iteration re-checks frictionSettled against a fresh refresh.
+      continue;
     }
 
     const J = Array.from({ length: n }, () => new Array(n).fill(0));
@@ -124,7 +191,7 @@ export function solveHydraulics(network, userOptions = {}) {
       const h = options.finiteDiffStep;
       const xPerturbed = x.slice();
       xPerturbed[j] += h;
-      const { residual: rP } = residualVector(xPerturbed);
+      const { residual: rP } = residualVector(xPerturbed, admittanceById);
       for (let i = 0; i < n; i++) J[i][j] = (rP[i] - r0[i]) / h;
     }
 
@@ -139,7 +206,7 @@ export function solveHydraulics(network, userOptions = {}) {
     let accepted = null;
     while (factor > 1e-4) {
       const xTrial = x.map((v, i) => v + factor * dx[i]);
-      const trial = residualVector(xTrial);
+      const trial = residualVector(xTrial, admittanceById);
       if (normInf(trial.residual) < rNorm0 || factor <= 2e-4) {
         accepted = { xTrial, trial };
         break;
@@ -156,7 +223,13 @@ export function solveHydraulics(network, userOptions = {}) {
     last = accepted.trial;
     history.push({ iteration: iterations, residualNorm: normInf(last.residual), maxDx, stepFactor: factor });
 
-    if (normInf(last.residual) < options.flowTolerance && maxDx < options.headTolerance) {
+    // When recomputeFriction is on, admittance for this step was frozen
+    // from the *previous* iteration's flow -- converging here only means
+    // the pressures are self-consistent with that not-yet-refreshed
+    // admittance. Don't declare victory here; let the top-of-loop refresh
+    // (next iteration) re-derive admittance from this step's own flow and
+    // re-check both residual and frictionSettled together.
+    if (normInf(last.residual) < options.flowTolerance && maxDx < options.headTolerance && !recomputeFriction) {
       converged = true;
       status = 'converged';
     }
@@ -170,7 +243,10 @@ export function solveHydraulics(network, userOptions = {}) {
   const elementOut = {};
   for (const el of network.elements) {
     const r = elementResults.get(el.id);
-    elementOut[el.id] = r;
+    const reynoldsNumber = recomputeFriction && el.type === 'pipe' && network.headlossModel === 'darcyWeisbach'
+      ? reynoldsNumberFor(el.params, network.fluid, r.Q)
+      : null;
+    elementOut[el.id] = { ...r, reynoldsNumber };
     netFlowByNode.set(el.sourceNodeId, netFlowByNode.get(el.sourceNodeId) + r.Q);
     netFlowByNode.set(el.targetNodeId, netFlowByNode.get(el.targetNodeId) - r.Q);
     if (!r.valid) {
@@ -222,6 +298,7 @@ export function applyHydraulicResult(network, result) {
     el.computed.pressureDrop = r.deltaPressure;
     el.computed.valid = r.valid;
     el.computed.messages = r.messages;
+    el.computed.reynoldsNumber = r.reynoldsNumber ?? null;
   }
   return updated;
 }

@@ -233,6 +233,21 @@ class Store {
     this.setState({ network });
   }
 
+  /**
+   * Toggles whether the hydraulic solver re-derives Darcy-Weisbach pipe
+   * admittance from the network's own Reynolds number each outer Newton
+   * iteration (see solver/hydraulics.js), instead of using each pipe's
+   * fixed admittance.current (computed once at a 1 m/s reference velocity).
+   * No admittance values need recomputing here -- unlike setHeadlossModel,
+   * this only changes solve-time behavior, not what admittance.current means.
+   */
+  setRecomputeFriction(enabled) {
+    if (enabled === this.state.network.recomputeFriction) return;
+    this.pushUndoSnapshot();
+    const network = { ...this.state.network, recomputeFriction: enabled };
+    this.setState({ network });
+  }
+
   // ---- copy / paste ---------------------------------------------------
   copySelection() {
     const { selection, network } = this.state;

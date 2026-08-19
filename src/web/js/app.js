@@ -11,7 +11,7 @@ initResizers();
 initPalette(document.getElementById('ns-palette'), store);
 initEditor(document.getElementById('ns-canvas'), store);
 initInspector(document.getElementById('panel-properties'), store);
-initResultsPanel(document.getElementById('panel-results'), store);
+initResultsPanel(document.getElementById('panel-results'), store, (errors) => showBanner(errors, 'error'));
 initGoalSeekPanel(document.getElementById('panel-goalseek'), store);
 
 // ---- tabs -----------------------------------------------------------
@@ -80,7 +80,7 @@ document.getElementById('btn-load-file').addEventListener('click', () => {
 });
 
 document.getElementById('btn-save-file').addEventListener('click', () => {
-  downloadNetwork(store);
+  downloadNetwork(store, (errors) => showBanner(errors, 'error'));
 });
 
 document.getElementById('btn-solve').addEventListener('click', () => {

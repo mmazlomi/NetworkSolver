@@ -51,7 +51,7 @@ function totalHead(node, pressure, density) {
   return Number.isFinite(pressure) && Number.isFinite(density) ? getEffectiveElevation(node) + pressure / (density * GRAVITY) : null;
 }
 
-export function initResultsPanel(container, store) {
+export function initResultsPanel(container, store, onError) {
   store.subscribe((state) => render(state));
   render(store.state);
 
@@ -62,7 +62,7 @@ export function initResultsPanel(container, store) {
 
     const header = el('div', { class: 'ns-panel-header' }, [el('h3', { text: 'Solver status' })]);
     const exportBtn = el('button', { type: 'button', class: 'ns-btn-small', text: 'Export Results (CSV)' });
-    exportBtn.addEventListener('click', () => downloadResultsCsv(store));
+    exportBtn.addEventListener('click', () => downloadResultsCsv(store, onError));
     header.appendChild(exportBtn);
     container.appendChild(header);
 

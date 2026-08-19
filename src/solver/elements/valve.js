@@ -34,6 +34,16 @@ export function computeNominalAdmittance(params, fluid) {
   return (kvEff / 3600) * Math.sqrt(1 / (1e5 * sg));
 }
 
+/** Valves have no geometric flow bore in this model (sized by Kv, not diameter) -- no FNCG-equivalent Y. */
+export function computeFncgAdmittance() {
+  return null;
+}
+
+/** No FNCG-equivalent Y (see computeFncgAdmittance above) -- so no FNCG-equivalent mass flow either. */
+export function computeFncgMassFlow() {
+  return null;
+}
+
 export function flow({ pIn, pOut, zIn, zOut, admittance, fluid, enabled, params }) {
   const dp = effectiveDeltaPressure({ pIn, pOut, zIn, zOut, density: fluid.density });
   if (!enabled || openingFraction(params) <= 0) {

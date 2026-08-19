@@ -6,6 +6,7 @@
 // docs/research.md for the full rationale (same "keep it dependency-free"
 // reasoning as the rest of the app).
 import { getEffectiveElevation } from '../../solver/index.js';
+import { getElementModule } from '../../solver/elements/index.js';
 
 const GRAVITY = 9.80665;
 
@@ -24,6 +25,24 @@ function num(v) {
 
 function massFlow(density, q) {
   return Number.isFinite(q) && Number.isFinite(density) ? density * q : null;
+}
+
+// FNCG-equivalent line admittance Y, back-solved from this element's own
+// NetworkSolver-solved flow and pressure drop so that FNCG's mass-flow
+// equation reproduces that same flow (see
+// src/solver/elements/pipe.js computeFncgAdmittance) -- blank for element
+// types with no defined flow bore (valve, pump, heatExchanger).
+function fncgAdmittanceOf(el, network) {
+  return getElementModule(el.type).computeFncgAdmittance(el.params, network.fluid, el.computed.flow, el.computed.pressureDrop);
+}
+
+// FNCG-equivalent mass flow, reconstructed from the FNCG admittance Y above
+// through FNCG's own mass-flow equation (see
+// src/solver/elements/pipe.js computeFncgMassFlow) -- a round-trip check,
+// placed next to Mass flow (kg/s), that Y really does encode this
+// element's NetworkSolver-solved flow.
+function fncgMassFlowOf(el, network, fncgAdmittance) {
+  return getElementModule(el.type).computeFncgMassFlow(el.params, network.fluid, fncgAdmittance, el.computed.pressureDrop);
 }
 
 function totalHead(node, pressure, density) {
@@ -65,21 +84,26 @@ export function buildResultsCsv(state) {
   // exists -- so a reviewer can see exactly what Apply would change.
   const hasOptimization = !!(optimization && optimization.best);
   lines.push(csvRow(['Elements']));
-  const header = ['Element', 'Type', 'Enabled', 'Initial admittance', 'Current admittance (old)'];
+  const header = ['Element', 'Type', 'Enabled', 'Initial admittance', 'Current admittance (old)', 'FNCG admittance Y (current)'];
   if (hasOptimization) header.push('Goal-seek admittance (proposed)');
   header.push(
-    'Min admittance', 'Max admittance', 'Flow (m3/s)', 'Mass flow (kg/s)',
+    'Min admittance', 'Max admittance', 'Flow (m3/s)', 'Mass flow (kg/s)', 'FNCG mass flow (kg/s)',
     'Pressure drop src-tgt (Pa)', 'Inlet T (C)', 'Outlet T (C)', 'Heat duty (W)',
   );
   lines.push(csvRow(header));
   for (const e of network.elements) {
-    const row = [e.name, e.type, e.enabled ? 'yes' : 'no', num(e.admittance.initial), num(e.admittance.current)];
+    const fncgAdmittance = fncgAdmittanceOf(e, network);
+    const row = [
+      e.name, e.type, e.enabled ? 'yes' : 'no', num(e.admittance.initial), num(e.admittance.current),
+      num(fncgAdmittance),
+    ];
     if (hasOptimization) {
       const proposed = optimization.best.admittances[e.id];
       row.push(proposed !== undefined ? num(proposed) : '');
     }
     row.push(
       num(e.admittance.min), num(e.admittance.max), num(e.computed.flow), num(massFlow(density, e.computed.flow)),
+      num(fncgMassFlowOf(e, network, fncgAdmittance)),
       num(e.computed.pressureDrop), num(e.computed.inletTemperature), num(e.computed.outletTemperature), num(e.computed.heatDuty),
     );
     lines.push(csvRow(row));
@@ -103,14 +127,36 @@ export function buildResultsCsv(state) {
   return lines.join('\r\n');
 }
 
-export function downloadResultsCsv(store) {
+// Save via the File System Access API where available, so the user picks
+// the destination path instead of always landing in the Downloads folder
+// -- same pattern as fileIO.js's downloadNetwork(). Falls back to the
+// anchor-download trick on browsers that don't support it (Firefox, Safari
+// as of this writing).
+export async function downloadResultsCsv(store, onError) {
   const csv = buildResultsCsv(store.state);
+  const safeName = (store.state.network.meta.name || 'network').replace(/[^a-z0-9-_]+/gi, '_').toLowerCase();
+  const suggestedName = `${safeName}-results.csv`;
+
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName,
+        types: [{ description: 'CSV results', accept: { 'text/csv': ['.csv'] } }],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(csv);
+      await writable.close();
+    } catch (err) {
+      if (err.name !== 'AbortError') onError?.([`Failed to save the file: ${err.message}`]);
+    }
+    return;
+  }
+
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  const safeName = (store.state.network.meta.name || 'network').replace(/[^a-z0-9-_]+/gi, '_').toLowerCase();
   a.href = url;
-  a.download = `${safeName}-results.csv`;
+  a.download = suggestedName;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

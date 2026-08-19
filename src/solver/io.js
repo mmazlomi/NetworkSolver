@@ -15,6 +15,7 @@ export function exportNetwork(network) {
     meta: network.meta,
     fluid: network.fluid,
     headlossModel: network.headlossModel,
+    recomputeFriction: network.recomputeFriction,
     nodes: network.nodes,
     elements: network.elements,
     goalSeek: {
@@ -131,6 +132,7 @@ export function importNetwork(input) {
     meta: raw.meta,
     fluid: createFluid(raw.fluid),
     headlossModel: raw.headlossModel,
+    recomputeFriction: raw.recomputeFriction,
     nodes,
     elements,
     goalSeek,

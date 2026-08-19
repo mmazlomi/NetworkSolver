@@ -25,6 +25,26 @@ test('rejects a network with no fixed-pressure reference node', () => {
   assert.ok(result.errors.some((e) => e.code === 'NO_PRESSURE_REFERENCE'));
 });
 
+test('rejects a network with two elements sharing the same name', () => {
+  const net = baseValidNetwork();
+  const n3 = createNode({ id: 'n3' });
+  net.nodes.push(n3);
+  net.elements.push(createElement('pipe', {
+    id: 'p2', name: 'p1', sourceNodeId: 'n2', targetNodeId: 'n3', admittance: { current: 1e-4 },
+  }));
+  const result = validateNetwork(net);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((e) => e.code === 'DUPLICATE_ELEMENT_NAME'));
+});
+
+test('rejects a network with two nodes sharing the same name', () => {
+  const net = baseValidNetwork();
+  net.nodes[1].name = net.nodes[0].name;
+  const result = validateNetwork(net);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((e) => e.code === 'DUPLICATE_NODE_NAME'));
+});
+
 test('detects a disconnected region lacking its own pressure reference', () => {
   const net = baseValidNetwork();
   const n3 = createNode({ id: 'n3' });
@@ -92,6 +112,22 @@ test('warns about isolated nodes without blocking validation', () => {
   const result = validateNetwork(net);
   assert.equal(result.valid, true);
   assert.ok(result.warnings.some((w) => w.code === 'ISOLATED_NODE'));
+});
+
+test('warns when a goal-seek adjustable pipe would have its admittance overridden by recomputeFriction', () => {
+  const net = baseValidNetwork();
+  net.recomputeFriction = true;
+  net.goalSeek = { ...net.goalSeek, adjustable: [{ elementId: 'p1', min: 1e-6, max: 1e-2 }] };
+  const result = validateNetwork(net);
+  assert.equal(result.valid, true);
+  assert.ok(result.warnings.some((w) => w.code === 'RECOMPUTE_FRICTION_OVERRIDES_GOAL_SEEK'));
+});
+
+test('no recomputeFriction/goal-seek warning when recomputeFriction is off', () => {
+  const net = baseValidNetwork();
+  net.goalSeek = { ...net.goalSeek, adjustable: [{ elementId: 'p1', min: 1e-6, max: 1e-2 }] };
+  const result = validateNetwork(net);
+  assert.ok(!result.warnings.some((w) => w.code === 'RECOMPUTE_FRICTION_OVERRIDES_GOAL_SEEK'));
 });
 
 function networkWithTank(tankParams) {

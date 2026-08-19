@@ -81,6 +81,9 @@ function renderNetworkSettings(container, network, store) {
     { value: 'hazenWilliams', label: 'Hazen-Williams' },
   ], (v) => store.setHeadlossModel(v))));
   container.appendChild(el('p', { class: 'ns-hint', text: 'Applies to every pipe in the network (matching EPANET\'s own network-wide Headloss option). Switching models recomputes every pipe\'s Current admittance from its geometry under the new model -- Darcy-Weisbach uses each pipe\'s Roughness, Hazen-Williams uses each pipe\'s Hazen-Williams C. Valves, pumps, and heat exchangers are unaffected.' }));
+
+  container.appendChild(field('Recompute friction factor from Reynolds number', checkbox(network.recomputeFriction, (v) => store.setRecomputeFriction(v))));
+  container.appendChild(el('p', { class: 'ns-hint', text: 'By default every pipe\'s admittance is a fixed value computed once at an assumed 1 m/s reference velocity (like a valve\'s Kv rating), so flow splits between parallel paths stay the same no matter how much total flow is driven through the network. Enabling this re-derives each pipe\'s Darcy-Weisbach friction factor from its own actual Reynolds number every solver iteration, so flow splits can shift with total flow rate (e.g. near the laminar/turbulent transition). Darcy-Weisbach only -- Hazen-Williams has no friction-factor/Reynolds-number concept. Costs extra solver iterations.' }));
 }
 
 function renderNode(container, node, store, fluid) {
@@ -137,11 +140,23 @@ const ADMITTANCE_GEOMETRY_FIELDS = {
   valve: ['openingPercent', 'kvRated', 'characteristic'],
 };
 
-/** Updates one params field, and if it affects hydraulic resistance, recomputes admittance.current to match (as a single combined edit/undo step). */
+function isGoalSeekAdjustable(network, elementId) {
+  return network.goalSeek.adjustable.some((a) => a.elementId === elementId);
+}
+
+/**
+ * Updates one params field, and if it affects hydraulic resistance,
+ * recomputes admittance.current to match (as a single combined edit/undo
+ * step) -- except for elements currently configured as goal-seek
+ * adjustable, whose "Current" admittance holds a tuned goal-seek result
+ * rather than the geometry's nominal value; silently overwriting it on
+ * every geometry edit would discard that tuning. Those elements keep their
+ * admittance until the user re-runs goal-seek or edits "Current" directly.
+ */
 function updateElementParam(store, el_, network, key, value) {
   const newParams = { ...el_.params, [key]: value };
   const patch = { params: { [key]: value } };
-  if ((ADMITTANCE_GEOMETRY_FIELDS[el_.type] || []).includes(key)) {
+  if ((ADMITTANCE_GEOMETRY_FIELDS[el_.type] || []).includes(key) && !isGoalSeekAdjustable(network, el_.id)) {
     const admittance = getElementModule(el_.type).computeNominalAdmittance(newParams, network.fluid, network.headlossModel);
     if (admittance != null && admittance > 0) patch.admittance = { current: admittance };
   }
@@ -191,7 +206,12 @@ function renderElement(container, el_, store, network) {
   if (el_.type !== 'pump') {
     container.appendChild(section('Admittance'));
     if (el_.type === 'pipe' || el_.type === 'valve') {
-      container.appendChild(el('p', { class: 'ns-hint', text: '"Current" updates automatically when you edit the geometry/opening fields below. Edit it directly here to override that (e.g. to match a goal-seek result).' }));
+      container.appendChild(el('p', {
+        class: 'ns-hint',
+        text: isGoalSeekAdjustable(network, el_.id)
+          ? 'This element is a goal-seek adjustable element, so "Current" holds a tuned goal-seek result -- editing the geometry/opening fields below will NOT overwrite it. Re-run goal seek or edit "Current" directly to change it.'
+          : '"Current" updates automatically when you edit the geometry/opening fields below. Edit it directly here to override that (e.g. to match a goal-seek result).',
+      }));
     }
     container.appendChild(field('Initial', numberInput(el_.admittance.initial, (v) => store.updateElement(el_.id, { admittance: { initial: v } }))));
     container.appendChild(field('Current', numberInput(el_.admittance.current, (v) => store.updateElement(el_.id, { admittance: { current: v } }))));
@@ -240,6 +260,9 @@ function renderElement(container, el_, store, network) {
   container.appendChild(readonlyRow('Inlet temperature', formatNum(el_.computed.inletTemperature, '°C')));
   container.appendChild(readonlyRow('Outlet temperature', formatNum(el_.computed.outletTemperature, '°C')));
   container.appendChild(readonlyRow('Heat duty', formatNum(el_.computed.heatDuty, 'W')));
+  if (el_.type === 'pipe' && network.recomputeFriction) {
+    container.appendChild(readonlyRow('Reynolds number', formatNum(el_.computed.reynoldsNumber, '')));
+  }
   if (el_.computed.messages && el_.computed.messages.length) {
     const msgs = el('div', { class: 'ns-messages' });
     for (const m of el_.computed.messages) msgs.appendChild(el('div', { class: 'ns-message', text: m }));
@@ -255,7 +278,7 @@ function formatNum(v, unit) {
   if (v === null || v === undefined || Number.isNaN(v)) return '—';
   const abs = Math.abs(v);
   const formatted = abs !== 0 && (abs < 0.001 || abs >= 100000) ? v.toExponential(3) : v.toFixed(4);
-  return `${formatted} ${unit}`;
+  return unit ? `${formatted} ${unit}` : formatted;
 }
 
 export function initInspector(container, store) {
