@@ -11,6 +11,7 @@ export { buildExampleNetwork } from './example.js';
 export { buildComplexExampleNetwork } from './complexExample.js';
 export { buildNet1BenchmarkNetwork } from './net1BenchmarkExample.js';
 export { buildThreeReservoirBenchmarkNetwork } from './threeReservoirExample.js';
+export { buildTwoReservoirPipeBenchmarkNetwork } from './twoReservoirPipeExample.js';
 export { getElementModule } from './elements/index.js';
 
 import { validateNetwork } from './validate.js';

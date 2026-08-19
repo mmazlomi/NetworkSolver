@@ -4,7 +4,7 @@
 import {
   createNetwork, createNode, createElement, findNode, findElement, getElementModule, pruneGoalSeekReferences,
   validateNetwork, solveNetwork, buildExampleNetwork, buildComplexExampleNetwork, buildNet1BenchmarkNetwork,
-  buildThreeReservoirBenchmarkNetwork,
+  buildThreeReservoirBenchmarkNetwork, buildTwoReservoirPipeBenchmarkNetwork,
   optimizeAdmittances, applyOptimizationResult,
   exportNetwork, importNetwork,
 } from '../solver/index.js';
@@ -38,6 +38,12 @@ export const EXAMPLES = [
     label: 'Three-Reservoir Problem (Handbook Benchmark)',
     build: buildThreeReservoirBenchmarkNetwork,
     fileName: 'example-three-reservoir-benchmark.json',
+  },
+  {
+    id: 'two-reservoir-pipe-benchmark',
+    label: 'Two-Reservoir Single-Pipe Problem (Benchmark)',
+    build: buildTwoReservoirPipeBenchmarkNetwork,
+    fileName: 'example-two-reservoir-pipe-benchmark.json',
   },
 ];
 

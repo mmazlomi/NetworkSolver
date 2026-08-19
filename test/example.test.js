@@ -9,6 +9,7 @@ import { buildExampleNetwork } from '../src/solver/example.js';
 import { buildComplexExampleNetwork } from '../src/solver/complexExample.js';
 import { buildNet1BenchmarkNetwork } from '../src/solver/net1BenchmarkExample.js';
 import { buildThreeReservoirBenchmarkNetwork } from '../src/solver/threeReservoirExample.js';
+import { buildTwoReservoirPipeBenchmarkNetwork } from '../src/solver/twoReservoirPipeExample.js';
 import { validateNetwork } from '../src/solver/validate.js';
 import { solveNetwork } from '../src/solver/index.js';
 import { optimizeAdmittances, applyOptimizationResult } from '../src/solver/optimize.js';
@@ -211,6 +212,71 @@ test('Three-Reservoir Problem benchmark: solved flows match the published refere
   // (independent of the friction-model deviation above), so this must hold to solver tolerance.
   const junction = solved.nodes.find((n) => n.nodeType === 'junction');
   assert.ok(Math.abs(junction.computed.massBalanceResidual) < 1e-6);
+});
+
+test('Two-Reservoir Single-Pipe benchmark: load, validate, solve, goal-seek, export/import round trip', () => {
+  // The simplest possible pipe-only network: 2 reservoirs + 1 pipe, no junction/pump/heat exchanger.
+  runExampleWorkflow(buildTwoReservoirPipeBenchmarkNetwork(), { requirePump: false, requireHeatExchanger: false });
+});
+
+test('Two-Reservoir Single-Pipe benchmark: matches the source topology (2 reservoirs, 1 pipe)', () => {
+  const net = buildTwoReservoirPipeBenchmarkNetwork();
+
+  assert.equal(net.nodes.length, 2);
+  assert.equal(net.elements.length, 1);
+  assert.equal(net.elements[0].type, 'pipe');
+  assert.equal(net.nodes.filter((n) => n.nodeType === 'reservoir').length, 2);
+
+  const elevations = net.nodes.map((n) => n.elevation).sort((a, b) => a - b);
+  assert.deepEqual(elevations, [0, 20]);
+
+  const pipe = net.elements[0];
+  assert.equal(pipe.params.length, 250);
+  assert.equal(pipe.params.diameter, 0.25);
+  assert.ok(Math.abs(pipe.params.roughness - 0.046e-3) < 1e-12);
+  assert.equal(pipe.params.localLossCoefficient, 1.5);
+  // recomputeFriction ships off so goal-seek can adjust this pipe's admittance directly
+  // (recomputeFriction would otherwise overwrite it every outer iteration -- see the
+  // file's header comment); the accuracy test below enables it on a separate copy.
+  assert.equal(net.recomputeFriction, false);
+
+  assert.equal(new Set(net.nodes.map((n) => n.id)).size, net.nodes.length);
+  assert.equal(new Set(net.elements.map((e) => e.id)).size, net.elements.length);
+});
+
+test('Two-Reservoir Single-Pipe benchmark: with recomputeFriction on, solved flow matches the Colebrook-White reference within ~0.5%', () => {
+  // Reference (Colebrook-White fixed-point iteration, independent of this codebase -- see
+  // twoReservoirPipeExample.js's header): Q=0.24433 m^3/s. NetworkSolver uses the Swamee-Jain
+  // explicit approximation to Colebrook-White, iterated at the actual converged velocity via
+  // recomputeFriction, so a small, bounded gap is expected -- not an exact match -- and is what
+  // this test pins down numerically. The stored example ships with recomputeFriction off (so
+  // goal-seek can adjust the pipe's admittance directly), so this test enables it on a copy.
+  const net = { ...buildTwoReservoirPipeBenchmarkNetwork(), recomputeFriction: true };
+  const { network: solved, diagnostics } = solveNetwork(net);
+  assert.equal(diagnostics.hydraulic.converged, true);
+
+  const referenceQ = 0.24433;
+  const actual = solved.elements[0].computed.flow;
+  assert.ok(actual > 0, 'flow should run from the upper to the lower reservoir (positive)');
+  assert.ok(Math.abs(actual - referenceQ) / referenceQ < 0.005, `solved ${actual} vs Colebrook-White reference ${referenceQ}`);
+});
+
+test('Two-Reservoir Single-Pipe benchmark: default (fixed 1 m/s reference admittance) is a documented, bounded ~10% underestimate', () => {
+  // With recomputeFriction left at its default off, the pipe's admittance is fixed from a
+  // friction factor evaluated once at a 1 m/s reference velocity (see pipe.js), far from this
+  // pipe's actual ~5 m/s operating point -- the file header documents this as a ~6% gap; this
+  // test pins down a safe bound so a future change to the example's numbers or the friction
+  // model gets caught if the gap grows unexpectedly large.
+  const net = buildTwoReservoirPipeBenchmarkNetwork();
+  const { network: solved, diagnostics } = solveNetwork(net);
+  assert.equal(diagnostics.hydraulic.converged, true);
+
+  const referenceQ = 0.24433;
+  const actual = solved.elements[0].computed.flow;
+  assert.ok(actual > 0);
+  const relError = Math.abs(actual - referenceQ) / referenceQ;
+  assert.ok(relError > 0.02, `expected a noticeable fixed-admittance gap, got ${relError}`);
+  assert.ok(relError < 0.1, `fixed-admittance gap larger than expected: ${relError}`);
 });
 
 test('complex example: topology matches the ~40-element / 5-boundary-node design', () => {
